@@ -1,0 +1,39 @@
+{
+  "name": "mfa-management-platform",
+  "version": "1.0.0",
+  "description": "多因素认证应用管控平台",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "start:windows": "node server/server-windows.js",
+    "dev": "concurrently \"npm run server:dev\" \"npm run client:dev\"",
+    "server:dev": "nodemon server/index.js",
+    "client:dev": "cd client && npm start",
+    "build": "cd client && npm run build",
+    "install:all": "npm install && cd client && npm install",
+    "postinstall": "node tools/patch-http-proxy.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "helmet": "^7.0.0",
+    "sqlite3": "^5.1.6",
+    "axios": "^1.5.0",
+    "jsonwebtoken": "^9.0.2",
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^16.3.1",
+    "express-rate-limit": "^6.10.0",
+    "node-cron": "^3.0.2",
+    "speakeasy": "^2.0.0",
+    "qrcode": "^1.5.3",
+    "express-session": "^1.17.3",
+    "http-proxy-middleware": "^2.0.6"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1",
+    "concurrently": "^8.2.1"
+  },
+  "keywords": ["MFA", "企业微信", "认证", "管控平台"],
+  "author": "System Developer",
+  "license": "MIT"
+} 

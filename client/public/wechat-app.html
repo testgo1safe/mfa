@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>企业微信安全验证</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #07c160 0%, #05a050 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            max-width: 350px;
+            width: 100%;
+        }
+
+        .icon {
+            font-size: 48px;
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            color: #333;
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 30px;
+        }
+
+        .code-display {
+            background: #f5f5f5;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px 0;
+            border: 2px solid #07c160;
+        }
+
+        .code {
+            font-size: 36px;
+            font-weight: bold;
+            color: #07c160;
+            letter-spacing: 8px;
+            margin-bottom: 10px;
+            font-family: 'Courier New', monospace;
+            cursor: pointer;
+            user-select: all;
+            position: relative;
+        }
+        
+        .code:hover {
+            background: #f0f0f0;
+            border-radius: 8px;
+        }
+        
+        .code.copied {
+            background: #e6f7ff;
+            border: 2px solid #1890ff;
+        }
+
+        .countdown {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .refresh-btn {
+            background: #07c160;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 12px 24px;
+            font-size: 16px;
+            cursor: pointer;
+            margin: 20px 0;
+            transition: all 0.3s;
+        }
+
+        .refresh-btn:hover {
+            background: #05a050;
+        }
+
+        .refresh-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .instructions {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 20px;
+            text-align: left;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .instructions ol {
+            margin-left: 20px;
+        }
+
+        .instructions li {
+            margin-bottom: 5px;
+        }
+
+        .loading {
+            color: #666;
+        }
+
+        .error {
+            color: #ff4d4f;
+            background: #fff2f0;
+            border: 1px solid #ffccc7;
+            border-radius: 8px;
+            padding: 10px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="icon">🔒</div>
+        <h1>企业微信安全验证</h1>
+        <p class="subtitle">获取动态验证码</p>
+
+        <div class="code-display">
+            <div class="code" id="verificationCode" onclick="copyCode()" title="点击复制验证码">------</div>
+            <div class="countdown" id="countdown">获取中...</div>
+            <div id="copyTip" style="color: #1890ff; font-size: 12px; margin-top: 5px; display: none;">
+                ✅ 验证码已复制，请立即使用
+            </div>
+        </div>
+
+        <button class="refresh-btn" id="refreshBtn" onclick="generateCode()">
+            获取新验证码
+        </button>
+
+        <div class="instructions">
+            <strong>使用说明：</strong>
+            <ol>
+                <li>点击"获取新验证码"按钮</li>
+                <li><span style="color: #1890ff; font-weight: bold;">点击验证码复制</span></li>
+                <li>在电脑浏览器的验证页面输入验证码</li>
+            </ol>
+            
+            <div style="background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 4px; padding: 8px; margin-top: 10px; font-size: 13px;">
+                <strong>📱💻 跨设备使用：</strong>手机获取，电脑输入，60秒内有效
+            </div>
+        </div>
+
+
+
+        <div id="errorMsg" class="error" style="display: none;"></div>
+    </div>
+
+    <script>
+        let countdownTimer = null;
+        let currentWechatUserId = null; // 存储设备指纹ID
+        let codeIsLocked = false; // 验证码是否被锁定（复制后锁定）
+        let lastGeneratedCode = null; // 最后生成的验证码
+
+        // 生成稳定的设备指纹ID
+        function getUserIdentifier() {
+            // 先尝试从localStorage获取
+            let userId = localStorage.getItem('wechat_user_id');
+            
+            if (!userId) {
+                // 生成新的设备指纹ID
+                const timestamp = Date.now();
+                const random = Math.random().toString(36).substr(2, 9);
+                userId = 'device_' + timestamp + '_' + random;
+                
+                // 保存到localStorage
+                localStorage.setItem('wechat_user_id', userId);
+                console.log('H5页面生成新设备指纹ID:', userId);
+            } else {
+                console.log('H5页面使用已保存的设备指纹ID:', userId);
+            }
+            
+            return userId;
+        }
+
+        async function generateCode() {
+            const codeElement = document.getElementById('verificationCode');
+            const countdownElement = document.getElementById('countdown');
+            const refreshBtn = document.getElementById('refreshBtn');
+            const errorMsg = document.getElementById('errorMsg');
+
+            // 隐藏错误信息
+            errorMsg.style.display = 'none';
+
+            // 显示加载状态
+            codeElement.textContent = '------';
+            countdownElement.textContent = '生成中...';
+            refreshBtn.disabled = true;
+            refreshBtn.textContent = '生成中...';
+
+            try {
+                console.log('=== 开始验证码生成流程 ===');
+                console.log('用户代理:', navigator.userAgent);
+                console.log('当前时间:', new Date().toISOString());
+                
+                // 获取设备指纹
+                if (!currentWechatUserId) {
+                    currentWechatUserId = getUserIdentifier();
+                }
+                console.log('使用的设备指纹ID:', currentWechatUserId);
+                
+                // 发送请求，包含设备指纹
+                // 生产环境自动适配当前域名和端口
+                const baseUrl = window.location.origin;
+                const url = `${baseUrl}/api/wechat/generate-code?device=${encodeURIComponent(currentWechatUserId)}`;
+                console.log('请求URL:', url);
+                console.log('当前域名:', window.location.origin);
+                
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Device-Fingerprint': currentWechatUserId
+                    },
+                    credentials: 'include'
+                });
+                
+                console.log('请求响应状态:', response.status, response.statusText);
+                console.log('响应头:', Object.fromEntries(response.headers.entries()));
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('响应错误内容:', errorText);
+                    throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`);
+                }
+                
+                const data = await response.json();
+                console.log('API响应数据:', data);
+
+                if (data.success) {
+                    console.log('验证码获取成功:', data.code);
+                    console.log('设备指纹ID:', data.deviceFingerprint);
+                    console.log('剩余时间:', data.remainingTime);
+                    console.log('生成时调试信息:', data.debug);
+                    
+                    // 验证验证码格式
+                    if (!data.code || !/^\d{6}$/.test(data.code)) {
+                        throw new Error('返回的验证码格式不正确');
+                    }
+                    
+                    codeElement.textContent = data.code;
+                    lastGeneratedCode = data.code;
+                    currentWechatUserId = data.deviceFingerprint; // 保存设备指纹
+                    codeIsLocked = false; // 重新生成时解锁
+                    
+                    // 移除复制状态样式
+                    codeElement.classList.remove('copied');
+                    document.getElementById('copyTip').style.display = 'none';
+                    
+                    // 将设备指纹存储到localStorage，供验证页面使用
+                    localStorage.setItem('wechat_user_id', data.deviceFingerprint);
+                    console.log('验证码已保存到页面，localStorage已更新');
+                    
+                    startCountdown(data.remainingTime || 30);
+                } else {
+                    console.error('API返回失败:', data);
+                    throw new Error(data.message || '获取验证码失败');
+                }
+            } catch (error) {
+                console.error('=== 验证码生成失败 ===');
+                console.error('错误详情:', error);
+                console.error('错误堆栈:', error.stack);
+                
+                codeElement.textContent = '------';
+                countdownElement.textContent = '生成失败';
+                
+                let errorMessage = '获取验证码失败';
+                if (error.message.includes('403')) {
+                    errorMessage = '权限不足，请确保在企业微信中打开';
+                } else if (error.message.includes('404')) {
+                    errorMessage = '企业微信推送认证未配置';
+                } else if (error.message.includes('网络')) {
+                    errorMessage = '网络连接失败，请检查网络状态';
+                } else {
+                    errorMessage = error.message;
+                }
+                
+                errorMsg.textContent = errorMessage;
+                errorMsg.style.display = 'block';
+                console.log('=== 错误处理完成 ===');
+            } finally {
+                refreshBtn.disabled = false;
+                refreshBtn.textContent = '获取新验证码';
+            }
+        }
+
+        function startCountdown(remainingTime) {
+            const countdownElement = document.getElementById('countdown');
+            
+            if (countdownTimer) {
+                clearInterval(countdownTimer);
+            }
+
+            let timeLeft = remainingTime;
+            
+            function updateCountdown() {
+                if (timeLeft > 0) {
+                    countdownElement.textContent = `${timeLeft}秒后过期`;
+                    timeLeft--;
+                } else {
+                    countdownElement.textContent = '验证码已过期';
+                    clearInterval(countdownTimer);
+                    
+                    // 如果验证码被锁定（用户已复制），不自动刷新
+                    if (!codeIsLocked) {
+                        countdownElement.textContent = '验证码已过期，点击刷新获取新验证码';
+                        // 不再自动获取新验证码，需要用户手动点击
+                    } else {
+                        countdownElement.textContent = '验证码已锁定，请在浏览器中使用';
+                    }
+                }
+            }
+
+            updateCountdown();
+            countdownTimer = setInterval(updateCountdown, 1000);
+        }
+
+        // 检查企业微信环境
+        function checkWeChatWorkEnvironment() {
+            const userAgent = navigator.userAgent;
+            const isWechatWork = userAgent.includes('wxwork') || 
+                               userAgent.includes('WeixinWork') ||
+                               userAgent.includes('WeChat/') ||
+                               userAgent.includes('weixin_work');
+            
+            const isRegularWechat = userAgent.includes('MicroMessenger') && !isWechatWork;
+            
+            console.log('客户端环境检查:');
+            console.log('User Agent:', userAgent);
+            console.log('是否企业微信:', isWechatWork);
+            console.log('是否普通微信:', isRegularWechat);
+            
+            if (isRegularWechat) {
+                // 普通微信环境，显示警告
+                document.getElementById('errorMsg').innerHTML = 
+                    '<strong>⚠️ 环境警告</strong><br/>检测到普通微信环境，本功能仅限企业微信使用<br/>请从企业微信工作台打开';
+                document.getElementById('errorMsg').style.display = 'block';
+                
+                // 禁用验证码生成按钮
+                document.getElementById('refreshBtn').disabled = true;
+                document.getElementById('refreshBtn').textContent = '普通微信无法使用';
+                document.getElementById('refreshBtn').style.background = '#ccc';
+                
+                return false;
+            }
+            
+            return true;
+        }
+
+        // 页面加载时检查环境并自动生成验证码
+        window.onload = function() {
+            if (checkWeChatWorkEnvironment()) {
+                generateCode();
+            }
+        };
+
+        // 页面失去焦点时清除定时器
+        window.onblur = function() {
+            if (countdownTimer) {
+                clearInterval(countdownTimer);
+            }
+        };
+
+        // 页面获得焦点时重新生成验证码
+        window.onfocus = function() {
+            generateCode();
+        };
+
+
+
+         // 复制验证码功能
+         function copyCode() {
+             const codeElement = document.getElementById('verificationCode');
+             const copyTip = document.getElementById('copyTip');
+             const currentCode = codeElement.textContent;
+             
+             if (!currentCode || currentCode === '------') {
+                 alert('请先生成验证码');
+                 return;
+             }
+             
+             try {
+                 // 尝试使用现代复制API
+                 if (navigator.clipboard) {
+                     navigator.clipboard.writeText(currentCode).then(() => {
+                         showCopySuccess();
+                     }).catch(() => {
+                         fallbackCopy(currentCode);
+                     });
+                 } else {
+                     fallbackCopy(currentCode);
+                 }
+             } catch (error) {
+                 console.error('复制失败:', error);
+                 fallbackCopy(currentCode);
+             }
+             
+             function fallbackCopy(text) {
+                 // 备用复制方法
+                 const textArea = document.createElement('textarea');
+                 textArea.value = text;
+                 document.body.appendChild(textArea);
+                 textArea.select();
+                 try {
+                     document.execCommand('copy');
+                     showCopySuccess();
+                 } catch (err) {
+                     alert('复制失败，请手动复制验证码：' + text);
+                 }
+                 document.body.removeChild(textArea);
+             }
+             
+             function showCopySuccess() {
+                 // 锁定验证码，防止自动刷新
+                 codeIsLocked = true;
+                 
+                 // 显示复制成功状态
+                 codeElement.classList.add('copied');
+                 copyTip.style.display = 'block';
+                 copyTip.innerHTML = '✅ 验证码已复制并锁定，请立即在浏览器中使用<br/>🔒 锁定状态下不会自动刷新';
+                 
+                 console.log('验证码已复制并锁定:', currentCode);
+                 console.log('验证码锁定状态:', codeIsLocked);
+                 
+                 // 3秒后隐藏提示，但保持锁定状态
+                 setTimeout(() => {
+                     copyTip.innerHTML = '🔒 验证码已锁定，不会自动刷新';
+                 }, 3000);
+             }
+         };
+    </script>
+</body>
+</html> 
